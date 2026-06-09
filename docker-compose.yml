@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: payment-postgres
+    environment:
+      POSTGRES_DB: paymentdb
+      POSTGRES_USER: payment
+      POSTGRES_PASSWORD: payment
+    ports:
+      - "5432:5432"
+    volumes:
+      - payment-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payment -d paymentdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Slice B will enable LocalStack for Cognito + SQS + S3.
+  # localstack:
+  #   image: localstack/localstack:3
+  #   container_name: payment-localstack
+  #   ports:
+  #     - "4566:4566"
+  #   environment:
+  #     SERVICES: cognito-idp,sqs,s3
+  #     DEBUG: "0"
+  #   volumes:
+  #     - "/var/run/docker.sock:/var/run/docker.sock"
+
+volumes:
+  payment-pgdata:
