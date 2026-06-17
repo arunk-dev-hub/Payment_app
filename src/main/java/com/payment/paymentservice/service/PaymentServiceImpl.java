@@ -6,8 +6,16 @@ import com.payment.paymentservice.exception.IdempotencyConflictException;
 import com.payment.paymentservice.exception.InvalidPaymentStatusTransitionException;
 import com.payment.paymentservice.exception.PaymentNotFoundException;
 import com.payment.paymentservice.model.Payment;
+import com.payment.paymentservice.model.ProcessedStripeEvent;
 import com.payment.paymentservice.repository.PaymentRepository;
+import com.payment.paymentservice.repository.ProcessedStripeEventRepository;
+import com.stripe.exception.SignatureVerificationException;
+import com.stripe.model.Event;
+import com.stripe.model.PaymentIntent;
+import com.stripe.net.Webhook;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -18,12 +26,19 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Objects;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PaymentServiceImpl implements PaymentService {
 
     private final PaymentRepository paymentRepository;
+    private final StripeService stripeService;
+    private final ProcessedStripeEventRepository processedStripeEventRepository;
+
+    @Value("${stripe.webhook.secret:}")
+    private String webhookSecret;
 
     @Override
     @Transactional
@@ -54,6 +69,18 @@ public class PaymentServiceImpl implements PaymentService {
 
         try {
             Payment savedPayment = paymentRepository.save(payment);
+
+            // Create Stripe PaymentIntent and associate it
+            com.stripe.model.PaymentIntent paymentIntent = stripeService.createPaymentIntent(
+                    savedPayment.getAmount(),
+                    savedPayment.getCurrency(),
+                    savedPayment.getId()
+            );
+
+            savedPayment.setStripePaymentIntentId(paymentIntent.getId());
+            savedPayment.setStripeClientSecret(paymentIntent.getClientSecret());
+            savedPayment = paymentRepository.save(savedPayment);
+
             return mapToResponse(savedPayment);
         } catch (DataIntegrityViolationException exception) {
             if (normalizedIdempotencyKey == null) {
@@ -98,6 +125,98 @@ public class PaymentServiceImpl implements PaymentService {
 
         Payment savedPayment = paymentRepository.save(payment);
         return mapToResponse(savedPayment);
+    }
+
+    @Override
+    @Transactional
+    public void processStripeWebhook(String payload, String sigHeader) {
+        log.info("Received Stripe webhook signature verification");
+
+        if (webhookSecret == null || webhookSecret.isBlank()) {
+            throw new IllegalStateException("Stripe webhook signing secret is not configured.");
+        }
+
+        Event event;
+        try {
+            event = Webhook.constructEvent(payload, sigHeader, webhookSecret);
+        } catch (SignatureVerificationException e) {
+            log.error("Stripe webhook signature verification failed", e);
+            throw new IllegalArgumentException("Invalid signature: " + e.getMessage(), e);
+        }
+
+        // Deduplicate events
+        if (processedStripeEventRepository.existsById(event.getId())) {
+            log.info("Stripe event {} already processed. Skipping.", event.getId());
+            return;
+        }
+
+        // Save event to deduplicate
+        ProcessedStripeEvent processedEvent = ProcessedStripeEvent.builder()
+                .eventId(event.getId())
+                .processedAt(LocalDateTime.now())
+                .build();
+        try {
+            processedStripeEventRepository.saveAndFlush(processedEvent);
+        } catch (DataIntegrityViolationException e) {
+            log.info("Stripe event {} already processed (DB conflict). Skipping.", event.getId());
+            return;
+        }
+
+        if (event.getType().startsWith("payment_intent.")) {
+            com.stripe.model.PaymentIntent paymentIntent = (com.stripe.model.PaymentIntent) event.getDataObjectDeserializer()
+                    .getObject()
+                    .orElseGet(() -> {
+                        log.warn("Stripe API version mismatch or schema mismatch. Attempting unsafe deserialization.");
+                        try {
+                            return (com.stripe.model.PaymentIntent) event.getDataObjectDeserializer().deserializeUnsafe();
+                        } catch (com.stripe.exception.EventDataObjectDeserializationException e) {
+                            throw new IllegalArgumentException("Failed to deserialize Stripe event unsafely: " + e.getMessage(), e);
+                        }
+                    });
+
+
+
+            String paymentId = paymentIntent.getMetadata().get("paymentId");
+            Payment payment = null;
+
+            if (paymentId != null) {
+                payment = paymentRepository.findById(paymentId).orElse(null);
+            }
+
+            if (payment == null) {
+                payment = paymentRepository.findByStripePaymentIntentId(paymentIntent.getId()).orElse(null);
+            }
+
+            if (payment == null) {
+                log.warn("Payment not found for Stripe PaymentIntent: {} / metadata paymentId: {}", 
+                        paymentIntent.getId(), paymentId);
+                return;
+            }
+
+            Payment.PaymentStatus targetStatus;
+            switch (event.getType()) {
+                case "payment_intent.succeeded":
+                    targetStatus = Payment.PaymentStatus.COMPLETED;
+                    break;
+                case "payment_intent.payment_failed":
+                    targetStatus = Payment.PaymentStatus.FAILED;
+                    break;
+                case "payment_intent.processing":
+                    targetStatus = Payment.PaymentStatus.PROCESSING;
+                    break;
+                default:
+                    log.info("Ignoring unhandled payment_intent event type: {}", event.getType());
+                    return;
+            }
+
+            log.info("Transitioning payment {} from {} to {}", payment.getId(), payment.getStatus(), targetStatus);
+            validateStatusTransition(payment.getStatus(), targetStatus);
+            payment.setStatus(targetStatus);
+            payment.setUpdatedAt(LocalDateTime.now());
+            paymentRepository.save(payment);
+        } else {
+            log.info("Ignoring unhandled Stripe event type: {}", event.getType());
+        }
     }
 
     private Specification<Payment> buildPaymentSpecification(String status, String currency, String paymentMethod) {
@@ -151,21 +270,26 @@ public class PaymentServiceImpl implements PaymentService {
             return;
         }
 
-        if (currentStatus != Payment.PaymentStatus.PENDING) {
-            throw new InvalidPaymentStatusTransitionException(
-                    "Payment status cannot be changed from " + currentStatus + " to " + requestedStatus
-            );
+        if (currentStatus == Payment.PaymentStatus.PENDING) {
+            if (requestedStatus == Payment.PaymentStatus.PROCESSING ||
+                requestedStatus == Payment.PaymentStatus.COMPLETED ||
+                requestedStatus == Payment.PaymentStatus.FAILED) {
+                return;
+            }
+        } else if (currentStatus == Payment.PaymentStatus.PROCESSING) {
+            if (requestedStatus == Payment.PaymentStatus.COMPLETED ||
+                requestedStatus == Payment.PaymentStatus.FAILED) {
+                return;
+            }
+        } else if (currentStatus == Payment.PaymentStatus.COMPLETED) {
+            if (requestedStatus == Payment.PaymentStatus.REFUNDED) {
+                return;
+            }
         }
 
-        if (requestedStatus == Payment.PaymentStatus.PENDING) {
-            return;
-        }
-
-        if (requestedStatus != Payment.PaymentStatus.COMPLETED && requestedStatus != Payment.PaymentStatus.FAILED) {
-            throw new InvalidPaymentStatusTransitionException(
-                    "Payment status can only move from PENDING to COMPLETED or FAILED"
-            );
-        }
+        throw new InvalidPaymentStatusTransitionException(
+                "Payment status cannot be changed from " + currentStatus + " to " + requestedStatus
+        );
     }
 
     private String normalizeIdempotencyKey(String idempotencyKey) {
@@ -204,6 +328,8 @@ public class PaymentServiceImpl implements PaymentService {
                 .paymentMethod(payment.getPaymentMethod())
                 .idempotencyKey(payment.getIdempotencyKey())
                 .status(payment.getStatus().name())
+                .stripePaymentIntentId(payment.getStripePaymentIntentId())
+                .stripeClientSecret(payment.getStripeClientSecret())
                 .createdAt(payment.getCreatedAt())
                 .updatedAt(payment.getUpdatedAt())
                 .build();

@@ -19,6 +19,8 @@ public class PaymentResponse {
     private String paymentMethod;
     private String idempotencyKey;
     private String status;
+    private String stripePaymentIntentId;
+    private String stripeClientSecret;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

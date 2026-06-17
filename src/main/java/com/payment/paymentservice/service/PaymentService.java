@@ -14,4 +14,6 @@ public interface PaymentService {
     Page<PaymentResponse> getAllPayments(String status, String currency, String paymentMethod, Pageable pageable);
 
     PaymentResponse updatePaymentStatus(String id, String status);
+
+    void processStripeWebhook(String payload, String sigHeader);
 }

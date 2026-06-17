@@ -1,0 +1,113 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="payment-service-arch" name="Payment Service Architecture">
+    <mxGraphModel dx="1100" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="826" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Payment Service — Target AWS Architecture (design)" style="text;html=1;fontSize=18;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="10" width="640" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Client / Edge tier -->
+        <mxCell id="user" value="👤 User / Admin&#10;(browser)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="130" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="cloudfront" value="CloudFront&#10;(CDN)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="230" y="70" width="130" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="s3web" value="S3&#10;React static site" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="420" y="70" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="alb" value="Application&#10;Load Balancer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="230" y="170" width="130" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Compute -->
+        <mxCell id="api" value="ECS Fargate&#10;Spring Boot payment-service&#10;REST API + SQS consumer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="210" y="290" width="220" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Auth -->
+        <mxCell id="cognito" value="Amazon Cognito&#10;JWT / user pools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="490" y="290" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- External -->
+        <mxCell id="stripe" value="💳 Stripe&#10;(external gateway)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;dashed=0;" vertex="1" parent="1">
+          <mxGeometry x="700" y="290" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Data & storage -->
+        <mxCell id="rds" value="RDS&#10;PostgreSQL" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="40" y="420" width="140" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="s3rec" value="S3&#10;PDF receipts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="40" y="540" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Config & secrets -->
+        <mxCell id="secrets" value="Secrets Manager&#10;(DB / Stripe keys)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="210" y="430" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ssm" value="SSM Parameter Store&#10;(queue/topic ARNs)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="210" y="500" width="170" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Async messaging -->
+        <mxCell id="sqs" value="SQS queue" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="490" y="420" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="dlq" value="SQS&#10;dead-letter queue" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="680" y="420" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="sns" value="SNS topic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="490" y="510" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="email" value="✉️ Email / webhook" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="680" y="510" width="140" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Observability -->
+        <mxCell id="cw" value="CloudWatch — JSON logs · Prometheus metrics · alarms" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="40" y="640" width="340" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- CI/CD -->
+        <mxCell id="gh" value="GitHub Actions&#10;build · test · push" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d0cee2;strokeColor=#56517e;" vertex="1" parent="1">
+          <mxGeometry x="490" y="640" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ecr" value="ECR&#10;image registry" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d0cee2;strokeColor=#56517e;" vertex="1" parent="1">
+          <mxGeometry x="700" y="640" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Edges -->
+        <mxCell id="e1" value="HTTPS" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="user" target="cloudfront"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="cloudfront" target="s3web"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" value="/api" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="user" target="alb"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="alb" target="api"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" value="validate JWT" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=block;endArrow=block;" edge="1" parent="1" source="api" target="cognito"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" value="charge / refund" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="api" target="stripe"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" value="webhook" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="stripe" target="alb"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" value="JPA / Flyway" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="api" target="rds"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e9" value="store receipt" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="api" target="s3rec"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e10" value="publish event" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="api" target="sqs"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e11" value="consume" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="sqs" target="api"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e12" value="after N retries" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="sqs" target="dlq"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e13" value="publish" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="api" target="sns"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e14" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="sns" target="email"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e15" value="read secrets" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="api" target="secrets"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e16" value="read config" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="api" target="ssm"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e17" value="logs + metrics" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="api" target="cw"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e18" value="push image" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="gh" target="ecr"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e19" value="deploy" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="ecr" target="api"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend" value="Legend:  Blue = edge/client   Green = compute   Orange = auth/external   Red = data/storage   Yellow = async messaging   Purple = config/secrets   Grey = observability   Lavender = CI/CD&#10;Note: solid = request flow, dashed = async/event/deploy. AWS access via ECS task role — no static keys. Local dev runs the same code against LocalStack." style="text;html=1;fontSize=11;align=left;verticalAlign=top;spacing=6;fillColor=#ffffff;strokeColor=#cccccc;" vertex="1" parent="1">
+          <mxGeometry x="40" y="730" width="810" height="70" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

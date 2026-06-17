@@ -22,6 +22,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/actuator/health", "/h2-console/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/stripe").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/payments").hasAnyRole("USER", "ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/v1/payments").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/v1/payments/*").hasAnyRole("USER", "ADMIN")

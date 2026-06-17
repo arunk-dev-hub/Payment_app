@@ -115,6 +115,22 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler(StripeIntegrationException.class)
+    public ResponseEntity<ErrorResponse> handleStripeIntegrationException(
+            StripeIntegrationException exception,
+            HttpServletRequest request
+    ) {
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.BAD_GATEWAY.value())
+                .error(HttpStatus.BAD_GATEWAY.getReasonPhrase())
+                .message(exception.getMessage())
+                .path(request.getRequestURI())
+                .build();
+
+        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_GATEWAY);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(
             Exception exception,

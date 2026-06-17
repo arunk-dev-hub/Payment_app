@@ -10,4 +10,6 @@ import java.util.Optional;
 public interface PaymentRepository extends JpaRepository<Payment, String>, JpaSpecificationExecutor<Payment> {
 
     Optional<Payment> findByIdempotencyKey(String idempotencyKey);
+
+    Optional<Payment> findByStripePaymentIntentId(String stripePaymentIntentId);
 }

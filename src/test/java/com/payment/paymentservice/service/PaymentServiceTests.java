@@ -7,9 +7,18 @@ import com.payment.paymentservice.exception.InvalidPaymentStatusTransitionExcept
 import com.payment.paymentservice.exception.PaymentNotFoundException;
 import com.payment.paymentservice.model.Payment;
 import com.payment.paymentservice.repository.PaymentRepository;
+import com.payment.paymentservice.repository.ProcessedStripeEventRepository;
+import com.payment.paymentservice.model.ProcessedStripeEvent;
+import com.stripe.model.Event;
+import com.stripe.model.EventDataObjectDeserializer;
+import com.stripe.net.Webhook;
+import org.mockito.MockedStatic;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import java.util.Map;
+import java.util.HashMap;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -34,11 +43,18 @@ class PaymentServiceTests {
     @Mock
     private PaymentRepository paymentRepository;
 
+    @Mock
+    private StripeService stripeService;
+
+    @Mock
+    private ProcessedStripeEventRepository processedStripeEventRepository;
+
     private PaymentService paymentService;
 
     @BeforeEach
     void setUp() {
-        paymentService = new PaymentServiceImpl(paymentRepository);
+        paymentService = new PaymentServiceImpl(paymentRepository, stripeService, processedStripeEventRepository);
+        ReflectionTestUtils.setField(paymentService, "webhookSecret", "whsec_test_secret");
     }
 
     @Test
@@ -60,8 +76,13 @@ class PaymentServiceTests {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
+        com.stripe.model.PaymentIntent mockPaymentIntent = mock(com.stripe.model.PaymentIntent.class);
+        when(mockPaymentIntent.getId()).thenReturn("pi_mock_123");
+        when(mockPaymentIntent.getClientSecret()).thenReturn("pi_mock_123_secret_xyz");
+
         when(paymentRepository.findByIdempotencyKey("create-payment-key")).thenReturn(Optional.empty());
         when(paymentRepository.save(any(Payment.class))).thenReturn(mockSavedPayment);
+        when(stripeService.createPaymentIntent(any(), any(), any())).thenReturn(mockPaymentIntent);
 
         PaymentResponse response = paymentService.createPayment(request, "create-payment-key");
 
@@ -72,7 +93,7 @@ class PaymentServiceTests {
         assertThat(response.getIdempotencyKey()).isEqualTo("create-payment-key");
 
         verify(paymentRepository, times(1)).findByIdempotencyKey("create-payment-key");
-        verify(paymentRepository, times(1)).save(any(Payment.class));
+        verify(paymentRepository, times(2)).save(any(Payment.class));
     }
 
     @Test
@@ -249,6 +270,99 @@ class PaymentServiceTests {
                 .hasMessageContaining("Payment status cannot be changed from COMPLETED to FAILED");
 
         verify(paymentRepository, times(1)).findById("test-id-123");
+        verify(paymentRepository, never()).save(any(Payment.class));
+    }
+
+    @Test
+    void processStripeWebhook_shouldTransitionToCompleted_whenPaymentIntentSucceeded() {
+        Event mockEvent = mock(Event.class);
+        when(mockEvent.getId()).thenReturn("evt_111");
+        when(mockEvent.getType()).thenReturn("payment_intent.succeeded");
+
+        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+        when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
+
+        com.stripe.model.PaymentIntent mockPaymentIntent = mock(com.stripe.model.PaymentIntent.class);
+        Map<String, String> metadata = new HashMap<>();
+        metadata.put("paymentId", "payment-uuid");
+        when(mockPaymentIntent.getMetadata()).thenReturn(metadata);
+        when(deserializer.getObject()).thenReturn(Optional.of(mockPaymentIntent));
+
+        Payment pendingPayment = Payment.builder()
+                .id("payment-uuid")
+                .amount(BigDecimal.valueOf(100.00))
+                .currency("USD")
+                .status(Payment.PaymentStatus.PENDING)
+                .stripePaymentIntentId("pi_123")
+                .build();
+
+        when(processedStripeEventRepository.existsById("evt_111")).thenReturn(false);
+        when(paymentRepository.findById("payment-uuid")).thenReturn(Optional.of(pendingPayment));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        try (MockedStatic<Webhook> mockedWebhook = mockStatic(Webhook.class)) {
+            mockedWebhook.when(() -> Webhook.constructEvent(any(), any(), any())).thenReturn(mockEvent);
+
+            paymentService.processStripeWebhook("payload", "sigHeader");
+        }
+
+        assertThat(pendingPayment.getStatus()).isEqualTo(Payment.PaymentStatus.COMPLETED);
+        verify(processedStripeEventRepository, times(1)).saveAndFlush(any(ProcessedStripeEvent.class));
+        verify(paymentRepository, times(1)).save(pendingPayment);
+    }
+
+    @Test
+    void processStripeWebhook_shouldTransitionToFailed_whenPaymentIntentFailed() {
+        Event mockEvent = mock(Event.class);
+        when(mockEvent.getId()).thenReturn("evt_222");
+        when(mockEvent.getType()).thenReturn("payment_intent.payment_failed");
+
+        EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+        when(mockEvent.getDataObjectDeserializer()).thenReturn(deserializer);
+
+        com.stripe.model.PaymentIntent mockPaymentIntent = mock(com.stripe.model.PaymentIntent.class);
+        Map<String, String> metadata = new HashMap<>();
+        metadata.put("paymentId", "payment-uuid");
+        when(mockPaymentIntent.getMetadata()).thenReturn(metadata);
+        when(deserializer.getObject()).thenReturn(Optional.of(mockPaymentIntent));
+
+        Payment pendingPayment = Payment.builder()
+                .id("payment-uuid")
+                .amount(BigDecimal.valueOf(100.00))
+                .currency("USD")
+                .status(Payment.PaymentStatus.PENDING)
+                .stripePaymentIntentId("pi_123")
+                .build();
+
+        when(processedStripeEventRepository.existsById("evt_222")).thenReturn(false);
+        when(paymentRepository.findById("payment-uuid")).thenReturn(Optional.of(pendingPayment));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        try (MockedStatic<Webhook> mockedWebhook = mockStatic(Webhook.class)) {
+            mockedWebhook.when(() -> Webhook.constructEvent(any(), any(), any())).thenReturn(mockEvent);
+
+            paymentService.processStripeWebhook("payload", "sigHeader");
+        }
+
+        assertThat(pendingPayment.getStatus()).isEqualTo(Payment.PaymentStatus.FAILED);
+        verify(processedStripeEventRepository, times(1)).saveAndFlush(any(ProcessedStripeEvent.class));
+        verify(paymentRepository, times(1)).save(pendingPayment);
+    }
+
+    @Test
+    void processStripeWebhook_shouldDeduplicate_whenEventAlreadyProcessed() {
+        when(processedStripeEventRepository.existsById("evt_already_processed")).thenReturn(true);
+
+        Event mockEvent = mock(Event.class);
+        when(mockEvent.getId()).thenReturn("evt_already_processed");
+
+        try (MockedStatic<Webhook> mockedWebhook = mockStatic(Webhook.class)) {
+            mockedWebhook.when(() -> Webhook.constructEvent(any(), any(), any())).thenReturn(mockEvent);
+
+            paymentService.processStripeWebhook("payload", "sigHeader");
+        }
+
+        verify(processedStripeEventRepository, never()).save(any(ProcessedStripeEvent.class));
         verify(paymentRepository, never()).save(any(Payment.class));
     }
 }

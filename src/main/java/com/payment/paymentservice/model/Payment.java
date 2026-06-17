@@ -31,12 +31,20 @@ public class Payment {
     @Enumerated(EnumType.STRING)
     private PaymentStatus status;
 
+    private String stripePaymentIntentId;
+    private String stripeClientSecret;
+
+    @Version
+    private Long version;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
     public enum PaymentStatus {
         PENDING,
+        PROCESSING,
         COMPLETED,
-        FAILED
+        FAILED,
+        REFUNDED
     }
 }

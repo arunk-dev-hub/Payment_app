@@ -22,6 +22,7 @@ public class RefundServiceImpl implements RefundService {
 
     private final PaymentRepository paymentRepository;
     private final RefundRepository refundRepository;
+    private final StripeService stripeService;
 
     @Override
     @Transactional
@@ -30,6 +31,11 @@ public class RefundServiceImpl implements RefundService {
                 .orElseThrow(() -> new PaymentNotFoundException("Payment not found with id: " + paymentId));
 
         validateRefund(payment, request.getAmount());
+
+        // Process refund through Stripe if Stripe ID exists
+        if (payment.getStripePaymentIntentId() != null) {
+            stripeService.createRefund(payment.getStripePaymentIntentId(), request.getAmount());
+        }
 
         Refund refund = Refund.builder()
                 .payment(payment)
@@ -40,6 +46,16 @@ public class RefundServiceImpl implements RefundService {
                 .build();
 
         Refund savedRefund = refundRepository.save(refund);
+
+        // If this refund completes the payment, update payment status to REFUNDED
+        BigDecimal alreadyRefundedAmount = refundRepository.getCompletedRefundAmountByPaymentId(payment.getId());
+        BigDecimal availableRefundAmount = payment.getAmount().subtract(alreadyRefundedAmount);
+        if (availableRefundAmount.compareTo(BigDecimal.ZERO) == 0) {
+            payment.setStatus(Payment.PaymentStatus.REFUNDED);
+            payment.setUpdatedAt(LocalDateTime.now());
+            paymentRepository.save(payment);
+        }
+
         return mapToResponse(savedRefund);
     }
 
